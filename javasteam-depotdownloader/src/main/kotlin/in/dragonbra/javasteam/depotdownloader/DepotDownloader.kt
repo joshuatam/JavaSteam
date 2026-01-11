@@ -477,7 +477,9 @@ class DepotDownloader @JvmOverloads constructor(
 
         steam3!!.requestAppInfo(appId)
 
-        if (!accountHasAccess(appId, appId)) {
+        val isFreeToDownload = isAppFreeToDownload(appId)
+
+        if (!accountHasAccess(appId, appId) || isFreeToDownload) {
             if (steamUser.steamID!!.accountType != EAccountType.AnonUser && steam3!!.requestFreeAppLicense(appId)) {
                 logger?.debug("Obtained FreeOnDemand license for app $appId")
 
@@ -577,8 +579,17 @@ class DepotDownloader @JvmOverloads constructor(
 
         val infos = mutableListOf<DepotDownloadInfo>()
 
+        // instead to check ccess for each depot, calculate depotIdsWithAccess to check all depot at once.
+        val depotIds = depotManifestIds.map { it.first }
+        val depotIdsWithAccess = depotIdsOfAccountHasAccess(appId, depotIds)
+
         depotManifestIds.chunked(5).forEachIndexed { chunkIndex, chunk ->
             chunk.forEach { (depotId, manifestId) ->
+                if (!depotIdsWithAccess.contains(depotId) && !isFreeToDownload) {
+                    logger?.error("Depot $depotId is not available from this account.")
+                    return@forEach
+                }
+
                 val info = getDepotInfo(depotId, appId, manifestId, branch)
                 if (info != null) {
                     infos.add(info)
@@ -603,15 +614,6 @@ class DepotDownloader @JvmOverloads constructor(
     ): DepotDownloadInfo? {
         var manifestId = manifestId
         var branch = branch
-
-        if (appId != INVALID_APP_ID) {
-            steam3!!.requestAppInfo(appId)
-        }
-
-        if (!accountHasAccess(appId, depotId)) {
-            logger?.error("Depot $depotId is not available from this account.")
-            return null
-        }
 
         if (manifestId == INVALID_MANIFEST_ID) {
             manifestId = getSteam3DepotManifest(depotId, appId, branch)
@@ -881,12 +883,20 @@ class DepotDownloader @JvmOverloads constructor(
         return sectionKV
     }
 
-    private suspend fun accountHasAccess(appId: Int, depotId: Int): Boolean {
+    private suspend fun accountHasAccess(appId: Int, depotId: Int): Boolean =
+        depotIdsOfAccountHasAccess(appId, listOf(depotId)).contains(depotId)
+
+    private fun isAppFreeToDownload(appId: Int): Boolean {
+        val info = getSteam3AppSection(appId, EAppInfoSection.Common)
+        return info != null && info["FreeToDownload"].asBoolean()
+    }
+
+    private suspend fun depotIdsOfAccountHasAccess(appId: Int, ownedDepotsIds: List<Int>): List<Int> {
         val steamUser = requireNotNull(steam3!!.steamUser)
         val steamID = requireNotNull(steamUser.steamID)
 
         if (licenses.isEmpty() && steamID.accountType != EAccountType.AnonUser) {
-            return false
+            return emptyList()
         }
 
         val licenseQuery = arrayListOf<Int>()
@@ -898,23 +908,18 @@ class DepotDownloader @JvmOverloads constructor(
 
         steam3!!.requestPackageInfo(licenseQuery)
 
+        val depotIdsOfAccountHasAccess = ArrayList<Int>()
+
         licenseQuery.forEach { license ->
             steam3!!.packageInfo[license]?.value?.let { pkg ->
                 val appIds = pkg.keyValues["appids"].children.map { it.asInteger() }
                 val depotIds = pkg.keyValues["depotids"].children.map { it.asInteger() }
-                if (depotId in appIds) {
-                    return true
-                }
-                if (depotId in depotIds) {
-                    return true
-                }
+                depotIdsOfAccountHasAccess.addAll(ownedDepotsIds.filter { it in appIds })
+                depotIdsOfAccountHasAccess.addAll(ownedDepotsIds.filter { it in depotIds })
             }
         }
 
-        // Check if this app is free to download without a license
-        val info = getSteam3AppSection(appId, EAppInfoSection.Common)
-
-        return info != null && info["FreeToDownload"].asBoolean()
+        return depotIdsOfAccountHasAccess.distinct()
     }
 
     private suspend fun downloadSteam3(mainAppId: Int, depots: List<DepotDownloadInfo>): Unit = coroutineScope {
