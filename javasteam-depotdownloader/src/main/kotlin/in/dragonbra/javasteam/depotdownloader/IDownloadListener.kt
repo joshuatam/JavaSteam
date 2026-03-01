@@ -68,4 +68,7 @@ interface IDownloadListener {
      * @param uncompressedBytes Actual data size (uncompressed)
      */
     fun onDepotCompleted(depotId: Int, compressedBytes: Long, uncompressedBytes: Long) {}
+
+    // Called when the download transitions to a new phase
+    fun onPhaseChanged(phase: DownloadPhase) {}
 }

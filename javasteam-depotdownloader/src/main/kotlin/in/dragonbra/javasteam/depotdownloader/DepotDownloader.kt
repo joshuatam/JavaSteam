@@ -154,6 +154,9 @@ class DepotDownloader @JvmOverloads constructor(
 
     private val listeners = CopyOnWriteArrayList<IDownloadListener>()
 
+    @Volatile
+    private var currentPhase: DownloadPhase = DownloadPhase.UNKNOWN
+
     private val progressUpdateInterval = 500L // ms
 
     private val scope: CoroutineScope = CoroutineScope(Dispatchers.IO + SupervisorJob(parentJob))
@@ -984,6 +987,7 @@ class DepotDownloader @JvmOverloads constructor(
             } else {
                 logger?.debug("Downloading depot ${depot.depotId} manifest")
                 notifyListeners { it.onStatusUpdate("Downloading manifest for depot ${depot.depotId}") }
+                transitionPhase(DownloadPhase.PREPARING)
 
                 var manifestRequestCode: ULong = 0U
                 var manifestRequestCodeExpiration = Instant.MIN
@@ -1270,6 +1274,7 @@ class DepotDownloader @JvmOverloads constructor(
         if (!fileDidExist) {
             logger?.debug("Pre-allocating: $fileFinalPath")
             notifyListeners { it.onStatusUpdate("Allocating file: ${file.fileName}") }
+            transitionPhase(DownloadPhase.PREPARING)
 
             // create new file. need all chunks
             try {
@@ -1390,6 +1395,7 @@ class DepotDownloader @JvmOverloads constructor(
             filesystem.openReadOnly(fileFinalPath).use { handle ->
                 logger?.debug("Validating $fileFinalPath")
                 notifyListeners { it.onStatusUpdate("Validating: ${file.fileName}") }
+                transitionPhase(DownloadPhase.VERIFYING)
 
                 neededChunks = Util.validateSteam3FileChecksums(
                     handle = handle,
@@ -1625,6 +1631,7 @@ class DepotDownloader @JvmOverloads constructor(
         }
 
         if (processingItemsMap.isEmpty()) {
+            transitionPhase(DownloadPhase.COMPLETE)
             completionFuture.complete(null)
         }
     }
@@ -1645,6 +1652,13 @@ class DepotDownloader @JvmOverloads constructor(
         scope.launch(Dispatchers.IO) {
             listeners.forEach { listener -> action(listener) }
         }
+    }
+
+    // Notify listeners only when the phase actually changes
+    private fun transitionPhase(newPhase: DownloadPhase) {
+        if (currentPhase == newPhase) return
+        currentPhase = newPhase
+        notifyListeners { it.onPhaseChanged(newPhase) }
     }
 
     // endregion
@@ -1888,6 +1902,9 @@ class DepotDownloader @JvmOverloads constructor(
             }
 
             val depotPercentage = (sizeDownloaded.toFloat() / depotDownloadCounter.completeDownloadSize)
+
+            // Transition to DOWNLOADING once actual data chunks start flowing
+            transitionPhase(DownloadPhase.DOWNLOADING)
 
             notifyListeners { listener ->
                 listener.onChunkCompleted(
