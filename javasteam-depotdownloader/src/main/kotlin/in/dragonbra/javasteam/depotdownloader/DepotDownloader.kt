@@ -1576,6 +1576,9 @@ class DepotDownloader @JvmOverloads constructor(
         // Throw the cancellation exception if requested so that this task is marked failed
         ensureActive()
 
+        // Transition to DOWNLOADING while actively fetching chunks from the network
+        transitionPhase(DownloadPhase.DOWNLOADING)
+
         // Create temporary file path for this chunk
         val chunkTempDir = depot.installDir / STAGING_DIR / "chunks" / fileId
         filesystem.createDirectories(chunkTempDir)
@@ -1903,8 +1906,8 @@ class DepotDownloader @JvmOverloads constructor(
 
             val depotPercentage = (sizeDownloaded.toFloat() / depotDownloadCounter.completeDownloadSize)
 
-            // Transition to DOWNLOADING once actual data chunks start flowing
-            transitionPhase(DownloadPhase.DOWNLOADING)
+            // Transition to DECOMPRESSING while processing decompression chunks
+            transitionPhase(DownloadPhase.DECOMPRESSING)
 
             notifyListeners { listener ->
                 listener.onChunkCompleted(

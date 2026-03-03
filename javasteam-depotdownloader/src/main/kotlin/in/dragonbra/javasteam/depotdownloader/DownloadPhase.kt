@@ -5,6 +5,7 @@ enum class DownloadPhase {
     UNKNOWN,
     PREPARING,
     DOWNLOADING,
+    DECOMPRESSING,
     VERIFYING,
     COMPLETE,
 }
