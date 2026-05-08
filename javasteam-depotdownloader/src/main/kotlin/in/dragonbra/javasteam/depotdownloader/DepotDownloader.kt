@@ -999,6 +999,9 @@ class DepotDownloader @JvmOverloads constructor(
                 var manifestRequestCode: ULong = 0U
                 var manifestRequestCodeExpiration = Instant.MIN
 
+                val MAX_SERVER_ATTEMPTS = 20
+                var serverAttempts = 0
+
                 do {
                     ensureActive()
 
@@ -1006,6 +1009,7 @@ class DepotDownloader @JvmOverloads constructor(
 
                     try {
                         connection = cdnClientPool!!.getConnection()
+                        serverAttempts++
 
                         var cdnToken: String? = null
 
@@ -1066,27 +1070,45 @@ class DepotDownloader @JvmOverloads constructor(
 
                             cdnClientPool!!.returnConnection(connection)
 
+                            if (serverAttempts >= MAX_SERVER_ATTEMPTS) {
+                                logger?.error("Reached max server attempts ($MAX_SERVER_ATTEMPTS) for depot manifest ${depot.depotId} $manifestIdStr. Aborting.")
+                                break
+                            }
                             continue
                         }
 
                         cdnClientPool!!.returnBrokenConnection(connection)
 
-                        // Unauthorized || Forbidden
+                        // Unauthorized || Forbidden — try next server instead of aborting
                         if (e.statusCode == 401 || e.statusCode == 403) {
-                            logger?.error("Encountered ${depot.depotId} for depot manifest $manifestIdStr ${e.statusCode}. Aborting.")
-                            break
+                            logger?.error("Server $connection returned ${e.statusCode} for depot manifest ${depot.depotId} $manifestIdStr. Trying next server.")
+                            if (serverAttempts >= MAX_SERVER_ATTEMPTS) {
+                                logger?.error("Reached max server attempts ($MAX_SERVER_ATTEMPTS) for depot manifest ${depot.depotId} $manifestIdStr. Aborting.")
+                                break
+                            }
+                            continue
                         }
 
-                        // NotFound
+                        // NotFound — try next server, the depot may not be on this CDN
                         if (e.statusCode == 404) {
-                            logger?.error("Encountered 404 for depot manifest ${depot.depotId} $manifestIdStr. Aborting.")
-                            break
+                            logger?.error("Server $connection returned 404 for depot manifest ${depot.depotId} $manifestIdStr. Trying next server.")
+                            if (serverAttempts >= MAX_SERVER_ATTEMPTS) {
+                                logger?.error("Reached max server attempts ($MAX_SERVER_ATTEMPTS) for depot manifest ${depot.depotId} $manifestIdStr. Aborting.")
+                                break
+                            }
+                            continue
                         }
 
                         logger?.error("Encountered error downloading depot manifest ${depot.depotId} $manifestIdStr: ${e.statusCode}")
                     } catch (e: Exception) {
                         cdnClientPool!!.returnBrokenConnection(connection)
                         logger?.error("Encountered error downloading manifest for depot ${depot.depotId} $manifestIdStr: ${e.message}")
+                    }
+
+                    // Bail out after too many server attempts
+                    if (serverAttempts >= MAX_SERVER_ATTEMPTS) {
+                        logger?.error("Reached max server attempts ($MAX_SERVER_ATTEMPTS) for depot manifest ${depot.depotId} $manifestIdStr. Aborting.")
+                        break
                     }
                 } while (newManifest == null)
 
@@ -1506,6 +1528,9 @@ class DepotDownloader @JvmOverloads constructor(
         var downloaded = 0
         val chunkBuffer = ByteArray(chunk.compressedLength)
 
+        val MAX_SERVER_ATTEMPTS = 20
+        var serverAttempts = 0
+
         do {
             ensureActive()
 
@@ -1514,6 +1539,7 @@ class DepotDownloader @JvmOverloads constructor(
             try {
                 connection = cdnClientPool?.getConnection()
                     ?: throw IllegalStateException("ContentDownloader already closed")
+                serverAttempts++
 
                 var cdnToken: String? = null
 
@@ -1557,21 +1583,35 @@ class DepotDownloader @JvmOverloads constructor(
 
                     cdnClientPool!!.returnConnection(connection)
 
+                    if (serverAttempts >= MAX_SERVER_ATTEMPTS) {
+                        logger?.error("Reached max server attempts ($MAX_SERVER_ATTEMPTS) for chunk $chunkID. Aborting.")
+                        break
+                    }
                     continue
                 }
 
                 cdnClientPool!!.returnBrokenConnection(connection)
 
-                // Unauthorized || Forbidden
+                // Unauthorized || Forbidden — try next server instead of aborting
                 if (e.statusCode == 401 || e.statusCode == 403) {
-                    logger?.error("Encountered ${e.statusCode} for chunk $chunkID. Aborting.")
-                    break
+                    logger?.error("Server $connection returned ${e.statusCode} for chunk $chunkID. Trying next server.")
+                    if (serverAttempts >= MAX_SERVER_ATTEMPTS) {
+                        logger?.error("Reached max server attempts ($MAX_SERVER_ATTEMPTS) for chunk $chunkID. Aborting.")
+                        break
+                    }
+                    continue
                 }
 
                 logger?.error("Encountered error downloading chunk $chunkID: ${e.statusCode}")
             } catch (e: Exception) {
                 cdnClientPool!!.returnBrokenConnection(connection)
                 logger?.error("Encountered unexpected error downloading chunk $chunkID", e)
+            }
+
+            // Bail out after too many server attempts
+            if (serverAttempts >= MAX_SERVER_ATTEMPTS) {
+                logger?.error("Reached max server attempts ($MAX_SERVER_ATTEMPTS) for chunk $chunkID. Aborting.")
+                break
             }
         } while (downloaded == 0)
 

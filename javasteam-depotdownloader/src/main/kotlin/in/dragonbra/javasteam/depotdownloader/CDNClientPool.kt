@@ -67,8 +67,10 @@ class CDNClientPool(
 
     @Throws(Exception::class)
     suspend fun updateServerList(maxNumServers: Int? = null) = mutex.withLock {
+        val clientCellId = steamSession.steamClient.cellID ?: 0
+
         val serversForSteamPipe = steamSession.steamContent!!.getServersForSteamPipe(
-            cellId = steamSession.steamClient.cellID ?: 0,
+            cellId = clientCellId,
             maxNumServers = maxNumServers,
             parentScope = scope
         ).await()
@@ -80,7 +82,11 @@ class CDNClientPool(
                 val isEligibleForApp = server.allowedAppIds.isEmpty() || server.allowedAppIds.contains(appId)
                 isEligibleForApp && (server.type == "SteamCache" || server.type == "CDN")
             }
-            .sortedBy { it.weightedLoad }
+            .sortedWith(
+                compareByDescending<Server> { it.cellId == clientCellId }
+                    .thenByDescending { it.steamChinaOnly }
+                    .thenBy { it.weightedLoad }
+            )
 
         // ContentServerPenalty removed for now.
 
@@ -88,8 +94,7 @@ class CDNClientPool(
 
         nextServer.set(0)
 
-        // servers.joinToString(separator = "\n", prefix = "Servers:\n") { "- $it" }
-        logger?.debug("Found ${weightedCdnServers.size} Servers")
+        logger?.debug("Found ${weightedCdnServers.size} Servers (cellId=$clientCellId, topServer=${weightedCdnServers.firstOrNull()})")
 
         if (weightedCdnServers.isEmpty()) {
             throw Exception("Failed to retrieve any download servers.")

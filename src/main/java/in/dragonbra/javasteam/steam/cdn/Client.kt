@@ -128,7 +128,7 @@ class Client(steamClient: SteamClient) : Closeable {
         }
 
         val request = Request.Builder()
-            .url(buildCommand(server, url, cdnAuthToken, proxyServer))
+            .url(buildCommand(server, url, cdnAuthToken?.trimStart('?'), proxyServer))
             .build()
 
         logger.debug("Request URL is: $request")
@@ -211,9 +211,9 @@ class Client(steamClient: SteamClient) : Closeable {
         val url = "depot/$depotId/chunk/$chunkID"
 
         val request = if (ClientLancache.useLanCacheServer) {
-            ClientLancache.buildLancacheRequest(server = server, command = url, query = cdnAuthToken)
+            ClientLancache.buildLancacheRequest(server = server, command = url, query = cdnAuthToken?.trimStart('?'))
         } else {
-            val url = buildCommand(server = server, command = url, query = cdnAuthToken, proxyServer = proxyServer)
+            val url = buildCommand(server = server, command = url, query = cdnAuthToken?.trimStart('?'), proxyServer = proxyServer)
             Request.Builder()
                 .url(url)
                 .build()
