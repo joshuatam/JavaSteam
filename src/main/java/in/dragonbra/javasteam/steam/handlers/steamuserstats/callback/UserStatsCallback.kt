@@ -17,7 +17,7 @@ import `in`.dragonbra.javasteam.util.stream.MemoryStream
  * This callback is fired in response to [SteamUserStats.getUserStats].
  */
 @JavaSteamAddition
-class UserStatsCallback(packetMsg: IPacketMsg?) : CallbackMsg() {
+class UserStatsCallback(packetMsg: IPacketMsg) : CallbackMsg() {
 
     /**
      * Gets the result.
@@ -123,7 +123,8 @@ class UserStatsCallback(packetMsg: IPacketMsg?) : CallbackMsg() {
                 if (bitsBlock != KeyValue.INVALID) {
                     // This block has bit-level achievements, expand them and get the values
                     for (bitEntry in bitsBlock.children) {
-                        val bitIndex = bitEntry["bit"].asInteger()
+                        // Grabbing bitIndex for Timestamp parsing.
+                        val bitIndex = bitEntry.name?.toIntOrNull() ?: 0
                         val displaySection = bitEntry["display"]
 
                         // Extract metadata
