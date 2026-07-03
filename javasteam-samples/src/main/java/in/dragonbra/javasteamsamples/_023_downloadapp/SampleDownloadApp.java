@@ -290,6 +290,7 @@ public class SampleDownloadApp implements Runnable, IDownloadListener {
                     /* (Optional) lowViolence */ false,
                     /* (Optional) depot */ List.of(),
                     /* (Optional) manifest */ List.of(),
+                    /* (Optional) downloadDirectory */ null,
                     /* (Optional) verify */ false,
                     /* (Optional) downloadManifestOnly */ false
             );

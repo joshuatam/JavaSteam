@@ -70,6 +70,7 @@ class PubFileItem @JvmOverloads constructor(
  * @property lowViolence If true, downloads low-violence versions where available
  * @property depot List of specific depot IDs to download
  * @property manifest List of specific manifest IDs corresponding to depot IDs
+ * @property downloadDirectory Separate directory for downloading and staging an app/game
  *
  * @author Lossy
  * @since Oct 1, 2025
@@ -89,6 +90,7 @@ class AppItem @JvmOverloads constructor(
     val lowViolence: Boolean = false,
     val depot: List<Int> = emptyList(),
     val manifest: List<Long> = emptyList(),
+    val downloadDirectory: String? = null,
     verify: Boolean = false,
     downloadManifestOnly: Boolean = false,
 ) : DownloadItem(appId, installDirectory, installToGameNameDirectory, verify, downloadManifestOnly)
