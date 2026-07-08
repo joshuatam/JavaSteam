@@ -7,6 +7,12 @@ import `in`.dragonbra.javasteam.types.DepotManifest
 import `in`.dragonbra.javasteam.util.Adler32
 import `in`.dragonbra.javasteam.util.log.LogManager
 import `in`.dragonbra.javasteam.util.log.Logger
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import okio.FileHandle
 import okio.FileSystem
 import okio.Path
@@ -147,28 +153,38 @@ object Util {
      * @throws IOException If there's an error reading the file
      */
     @JvmStatic
+    @JvmOverloads
     @Throws(IOException::class)
-    fun validateSteam3FileChecksums(handle: FileHandle, chunkData: List<ChunkData>): List<ChunkData> {
-        val neededChunks = mutableListOf<ChunkData>()
+    suspend fun validateSteam3FileChecksums(
+        handle: FileHandle,
+        chunkData: List<ChunkData>,
+        concurrency: Int = defaultValidateConcurrency(),
+    ): List<ChunkData> = coroutineScope {
+        val semaphore = Semaphore(concurrency.coerceAtLeast(1))
 
-        for (data in chunkData) {
-            val chunk = ByteArray(data.uncompressedLength)
-            val read = handle.read(data.offset, chunk, 0, data.uncompressedLength)
+        chunkData.map { data ->
+            async(Dispatchers.IO) {
+                semaphore.withPermit {
+                    val chunk = ByteArray(data.uncompressedLength)
+                    val read = handle.read(data.offset, chunk, 0, data.uncompressedLength)
 
-            val tempChunk = if (read > 0 && read < data.uncompressedLength) {
-                chunk.copyOf(read)
-            } else {
-                chunk
+                    val tempChunk = if (read > 0 && read < data.uncompressedLength) {
+                        chunk.copyOf(read)
+                    } else {
+                        chunk
+                    }
+
+                    val adler = Adler32.calculate(tempChunk)
+                    if (adler != data.checksum) data else null
+                }
             }
-
-            val adler = Adler32.calculate(tempChunk)
-            if (adler != data.checksum) {
-                neededChunks.add(data)
-            }
-        }
-
-        return neededChunks
+        }.awaitAll().filterNotNull()
     }
+
+    private const val MAX_VALIDATE_CONCURRENCY = 16
+
+    private fun defaultValidateConcurrency(): Int =
+        Runtime.getRuntime().availableProcessors().coerceIn(1, MAX_VALIDATE_CONCURRENCY)
 
     @JvmStatic
     @Throws(IOException::class)
