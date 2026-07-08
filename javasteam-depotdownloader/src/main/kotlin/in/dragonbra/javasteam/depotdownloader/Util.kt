@@ -31,6 +31,11 @@ object Util {
 
     private val logger: Logger = LogManager.getLogger<Util>()
 
+    private const val MAX_VALIDATE_CONCURRENCY = 16
+
+    private fun defaultValidateConcurrency(): Int =
+        Runtime.getRuntime().availableProcessors().coerceIn(1, MAX_VALIDATE_CONCURRENCY)
+
     @JvmOverloads
     @JvmStatic
     fun getSteamOS(androidEmulation: Boolean = false): String {
@@ -180,11 +185,6 @@ object Util {
             }
         }.awaitAll().filterNotNull()
     }
-
-    private const val MAX_VALIDATE_CONCURRENCY = 16
-
-    private fun defaultValidateConcurrency(): Int =
-        Runtime.getRuntime().availableProcessors().coerceIn(1, MAX_VALIDATE_CONCURRENCY)
 
     @JvmStatic
     @Throws(IOException::class)
