@@ -82,6 +82,7 @@ class UnifiedInterfaceTest {
             "PublishedFileClient.kt",
             "CloudConfigStore.kt",
             "CloudConfigStoreClient.kt",
+            "Wishlist.kt"
         )
     }
 }
